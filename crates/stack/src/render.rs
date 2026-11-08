@@ -1437,11 +1437,12 @@ pub fn render_castext(
             clean_body.as_str()
         };
         let escaped_title = escape_html_attr(&title);
+        let scrolling_attr = if scrolling == "false" { "no" } else { "yes" };
         let srcdoc = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>{escaped_title}</title>{styles}<script>const FRAME_ID = \"{frame_id}\";</script>{scripts}</head>\n<body style=\"margin:0px;\">{body_or_nbsp}</body></html>"
         );
         let replacement = format!(
-            "<div id=\"{holder_id}\" class=\"stack-iframe-holder\" style=\"{astyle}\" data-frame-id=\"{frame_id}\" data-frame-title=\"{escaped_title}\" data-frame-scrolling=\"{scrolling}\" data-frame-srcdoc=\"{srcdoc}\"></div>",
+            "<div id=\"{holder_id}\" class=\"stack-iframe-holder\" style=\"{astyle}\" data-frame-id=\"{frame_id}\" data-frame-title=\"{escaped_title}\" data-frame-scrolling=\"{scrolling}\" data-frame-srcdoc=\"{srcdoc}\"><iframe id=\"{frame_id}\" class=\"stack-iframe\" style=\"width:100%;height:100%;border:0;\" scrolling=\"{scrolling_attr}\" title=\"{escaped_title}\" referrerpolicy=\"no-referrer\" sandbox=\"allow-scripts allow-downloads\" srcdoc=\"{srcdoc}\"></iframe></div>",
             astyle = escape_html_attr(&astyle),
             srcdoc = escape_html_attr(&srcdoc),
         );
@@ -1487,7 +1488,7 @@ pub fn render_castext(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>{escaped_title}</title>{styles}<script>const FRAME_ID = \"{frame_id}\";</script>{scripts}</head>\n<body style=\"margin:0px;\">&#160;</body></html>"
         );
         let replacement = format!(
-            "<div id=\"{holder_id}\" class=\"stack-iframe-holder\" style=\"width:500px;height:400px;display:none;\" data-frame-id=\"{frame_id}\" data-frame-title=\"{escaped_title}\" data-frame-scrolling=\"true\" data-frame-srcdoc=\"{srcdoc}\"></div>",
+            "<div id=\"{holder_id}\" class=\"stack-iframe-holder\" style=\"width:500px;height:400px;display:none;\" data-frame-id=\"{frame_id}\" data-frame-title=\"{escaped_title}\" data-frame-scrolling=\"true\" data-frame-srcdoc=\"{srcdoc}\"><iframe id=\"{frame_id}\" class=\"stack-iframe\" style=\"width:100%;height:100%;border:0;\" scrolling=\"yes\" title=\"{escaped_title}\" referrerpolicy=\"no-referrer\" sandbox=\"allow-scripts allow-downloads\" srcdoc=\"{srcdoc}\"></iframe></div>",
             srcdoc = escape_html_attr(&srcdoc),
         );
         text.replace_range(m.start..m.end, &replacement);
@@ -1546,13 +1547,13 @@ pub fn render_castext(
         };
 
         let srcdoc = format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>{escaped_title}</title><link rel=\"stylesheet\" type=\"text/css\" href=\"{escaped_css}\"/>{styles}<script>const FRAME_ID = \"{frame_id}\";</script><script type=\"text/javascript\" src=\"{escaped_js}\"></script>{scripts}</head>\n<body style=\"margin:0px;\"><div style=\"box-sizing:border-box;width:100%;height:100%;\"><div class=\"jxgbox\" id=\"jxgbox\" style=\"width:100%;height:100%;\"></div></div><script type=\"module\">\nimport stack_js from '/corsscripts/stackjsiframe.min.js';\nimport stack_jxg from '/corsscripts/stackjsxgraph.min.js';\n{imports}\nvar divid = \"jxgbox\";var BOARDID = divid;\n{wrapped_or_rest_body}\n</script></body></html>",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" style=\"width:100%;height:100%;margin:0;padding:0;\">\n<head><title>{escaped_title}</title><style type=\"text/css\">\nhtml, body {{\n  width: 100%;\n  height: 100%;\n  margin: 0;\n  padding: 0;\n  overflow: hidden;\n}}\n.jxgbox, #jxgbox {{\n  width: 100%;\n  height: 100%;\n  box-sizing: border-box;\n}}\n</style><link rel=\"stylesheet\" type=\"text/css\" href=\"{escaped_css}\"/>{styles}<script>const FRAME_ID = \"{frame_id}\";</script><script type=\"text/javascript\" src=\"{escaped_js}\"></script>{scripts}</head>\n<body style=\"width:100%;height:100%;margin:0px;padding:0px;overflow:hidden;\"><div style=\"box-sizing:border-box;width:100%;height:100%;height:100vh;\"><div class=\"jxgbox\" id=\"jxgbox\" style=\"width:100%;height:100%;\"></div></div><script type=\"module\">\nimport stack_js from '/corsscripts/stackjsiframe.min.js';\nimport stack_jxg from '/corsscripts/stackjsxgraph.min.js';\n{imports}\nvar divid = \"jxgbox\";var BOARDID = divid;\n{wrapped_or_rest_body}\nfunction stackResizeBoard() {{\n  var b = (typeof JXG !== 'undefined' && JXG.boards) ? JXG.boards[divid] : null;\n  if (!b && typeof board !== 'undefined') {{ b = board; }}\n  if (b && b.resizeContainer) {{\n    var el = document.getElementById(divid);\n    if (el && el.clientHeight > 0 && (b.canvasHeight <= 0 || Math.abs(b.canvasHeight - el.clientHeight) > 2)) {{\n      b.resizeContainer(el.clientWidth, el.clientHeight);\n      b.fullUpdate();\n    }}\n  }}\n}}\nwindow.addEventListener('resize', stackResizeBoard);\nsetTimeout(stackResizeBoard, 20);\nsetTimeout(stackResizeBoard, 100);\nsetTimeout(stackResizeBoard, 300);\n</script></body></html>",
             escaped_css = escape_html_attr(&css_href),
             escaped_js = escape_html_attr(&js_src),
         );
 
         let replacement = format!(
-            r#"<div id="{div_id}" class="jxgbox stack-jsxgraph stack-iframe-holder" style="{style_attr}" data-jxg-code="{code}" data-frame-id="{frame_id}" data-frame-title="{escaped_title}" data-frame-scrolling="false" data-frame-srcdoc="{srcdoc}"></div>"#,
+            r#"<div id="{div_id}" class="jxgbox stack-jsxgraph stack-iframe-holder" style="{style_attr}" data-jxg-code="{code}" data-frame-id="{frame_id}" data-frame-title="{escaped_title}" data-frame-scrolling="false" data-frame-srcdoc="{srcdoc}"><iframe id="{frame_id}" class="stack-iframe" style="width:100%;height:100%;border:0;" scrolling="no" title="{escaped_title}" referrerpolicy="no-referrer" sandbox="allow-scripts allow-downloads" srcdoc="{srcdoc}"></iframe></div>"#,
             style_attr = escape_html_attr(&style_attr),
             code = escape_html_attr(&inline_code),
             srcdoc = escape_html_attr(&srcdoc),
@@ -2116,6 +2117,7 @@ cosec(x) := csc(x)$
 totient(n) := eulerphi(n)$
 texput(log, "\\ln", prefix)$
 matrixnorm(A, [p]) := sqrt(apply("+", map(lambda([x], x^2), list_matrix_entries(A))))$
+matrix_size(m) := if matrixp(m) then [length(m), if length(m) > 0 then length(m[1]) else 0] else [0, 0]$
 comp_square(ex, var) := block([a, b, c], a: coeff(expand(ex), var, 2), b: coeff(expand(ex), var, 1), c: coeff(expand(ex), var, 0), if a = 0 then ex else a*(var + b/(2*a))^2 + c - b^2/(4*a))$
 decimalplaces(x, n) := float(round(x * 10^n) / 10^n)$
 significantfigures(x, n) := block([f, d], if x = 0 then return(0), f: float(abs(x)), d: floor(log(f)/log(10)), float(round(x * 10^(n - 1 - d)) / 10^(n - 1 - d)))$
@@ -2665,6 +2667,40 @@ mod tests {
     }
 
     #[test]
+    fn test_johdatus_graafiteoriaan_jsxgraph_rendering() {
+        let xml = include_str!(
+            "../../../material/tentti-Matematiikan opettajat-Discrete Mathematics (TTY)-20160515-1723/johdatus_graafiteoriaan.xml"
+        );
+        let quiz = parse_moodle_xml(xml).unwrap();
+        for q in &quiz.question {
+            if let Question::Stack(sq) = q {
+                let ev = evaluate_stack_question_maxima(sq, 42);
+                assert!(
+                    ev.questiontext_html.contains("class=\"jxgbox stack-jsxgraph stack-iframe-holder\""),
+                    "should contain jsxgraph iframe holder"
+                );
+                assert!(
+                    ev.questiontext_html.contains("<iframe id=\"stack-iframe-"),
+                    "should render isolated iframe"
+                );
+                assert!(
+                    ev.questiontext_html.contains("sandbox=\"allow-scripts allow-downloads\""),
+                    "iframe must have sandbox without allow-same-origin"
+                );
+                assert!(
+                    !ev.questiontext_html.contains("allow-same-origin"),
+                    "must not contain allow-same-origin"
+                );
+                assert!(
+                    ev.questiontext_html.contains("var coord = [["),
+                    "matrix_size should properly evaluate coordinates for graph nodes"
+                );
+                break;
+            }
+        }
+    }
+
+    #[test]
     fn test_stack_js_comment_and_escape() {
         let raw = "before [[comment]]{@bad_cas@} [[comment]]nested[[/comment]][[/comment]] middle [[escape]][[javascript]]][[/escape]] and [[escape value=\"{@also_escaped@}\"/]] after";
         let mut tex_exprs = BTreeSet::new();
@@ -2789,6 +2825,9 @@ mod tests {
         );
         assert!(rendered.contains("class=\"jxgbox stack-jsxgraph stack-iframe-holder\""));
         assert!(rendered.contains("data-jxg-code="));
+        assert!(rendered.contains("<iframe id=\"stack-iframe-"));
+        assert!(rendered.contains("sandbox=\"allow-scripts allow-downloads\""));
+        assert!(!rendered.contains("allow-same-origin"));
         assert!(rendered.contains("/corsscripts/jsxgraphcore.min.js"));
         assert!(rendered.contains("/corsscripts/stackjsiframe.min.js"));
         assert!(rendered.contains("/corsscripts/stackjsxgraph.min.js"));
@@ -2831,6 +2870,18 @@ mod tests {
             assert!(
                 ev.questiontext_html.contains("stack-iframe-holder"),
                 "rendered questiontext_html should contain stack-iframe-holder"
+            );
+            assert!(
+                ev.questiontext_html.contains("<iframe"),
+                "rendered questiontext_html should contain iframe element"
+            );
+            assert!(
+                ev.questiontext_html.contains("sandbox=\"allow-scripts allow-downloads\""),
+                "iframe element must have sandbox without allow-same-origin"
+            );
+            assert!(
+                !ev.questiontext_html.contains("allow-same-origin"),
+                "iframe element must never grant allow-same-origin"
             );
             assert!(
                 ev.questiontext_html.contains("data-stack-input-type="),
