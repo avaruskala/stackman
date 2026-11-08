@@ -444,17 +444,12 @@ fn strip_maxima_comments(code: &str) -> String {
     let chars: Vec<char> = code.chars().collect();
     let mut i = 0;
     let mut in_str = false;
-    let mut comment_depth: usize = 0;
+    let mut in_comment = false;
 
     while i < chars.len() {
-        if comment_depth > 0 {
+        if in_comment {
             if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '/' {
-                comment_depth -= 1;
-                i += 2;
-                continue;
-            }
-            if i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
-                comment_depth += 1;
+                in_comment = false;
                 i += 2;
                 continue;
             }
@@ -480,7 +475,7 @@ fn strip_maxima_comments(code: &str) -> String {
         }
 
         if !in_str && i + 1 < chars.len() && chars[i] == '/' && chars[i + 1] == '*' {
-            comment_depth += 1;
+            in_comment = true;
             i += 2;
             continue;
         }
@@ -582,10 +577,16 @@ fn find_opening_tag_end(text: &str, after_tag_idx: usize) -> Option<usize> {
         }
         i += 1;
     }
-    text[after_tag_idx..].find("]]").map(|rel| after_tag_idx + rel)
+    text[after_tag_idx..]
+        .find("]]")
+        .map(|rel| after_tag_idx + rel)
 }
 
-fn find_castext_block(text: &str, tag_name: &str, mut search_from: usize) -> Option<CastextBlockMatch> {
+fn find_castext_block(
+    text: &str,
+    tag_name: &str,
+    mut search_from: usize,
+) -> Option<CastextBlockMatch> {
     let open_pat = format!("[[{tag_name}");
     let close_pat = format!("[[/{tag_name}]]");
     let bytes = text.as_bytes();
@@ -830,9 +831,7 @@ fn extract_input_refs(attrs: &str) -> Vec<(String, String)> {
     let prefix = b"input-ref-";
     let mut i = 0;
     while i + prefix.len() < bytes.len() {
-        if &bytes[i..i + prefix.len()] == prefix
-            && (i == 0 || bytes[i - 1].is_ascii_whitespace())
-        {
+        if &bytes[i..i + prefix.len()] == prefix && (i == 0 || bytes[i - 1].is_ascii_whitespace()) {
             let name_start = i + prefix.len();
             let mut j = name_start;
             while j < bytes.len() && !bytes[j].is_ascii_whitespace() && bytes[j] != b'=' {
@@ -1023,10 +1022,7 @@ pub fn separate_js_imports(code: &str) -> (String, String) {
     }
     rem.push_str(&code[last_idx..]);
 
-    (
-        imports_vec.join("\n"),
-        replace_cors_in_js(rem.trim_start()),
-    )
+    (imports_vec.join("\n"), replace_cors_in_js(rem.trim_start()))
 }
 
 /// Extract inner `[[style ...]]` and `[[script ...]]` blocks from an `[[iframe]]`, `[[javascript]]`, or `[[jsxgraph]]` body.
@@ -1423,8 +1419,8 @@ pub fn render_castext(
         let idx = *jxg_counter;
         let frame_id = format!("stack-iframe-{idx}");
         let holder_id = format!("stack-iframe-holder-{idx}");
-        let title = extract_attr(&m.attrs, "title")
-            .unwrap_or_else(|| format!("STACK IFRAME {idx}"));
+        let title =
+            extract_attr(&m.attrs, "title").unwrap_or_else(|| format!("STACK IFRAME {idx}"));
         let scrolling = match extract_attr(&m.attrs, "scrolling").as_deref() {
             Some("false") | Some("0") => "false",
             _ => "true",
@@ -2667,6 +2663,20 @@ mod tests {
     }
 
     #[test]
+    fn test_maxima_variable_extraction_from_test_mc() {
+        let code = include_str!("../../../test.mc");
+        let statements = normalize_maxima_statements(code);
+        let assigned = extract_assigned_variables(&statements);
+        assert!(
+            assigned.contains(&"CC".to_string()),
+            "CC must be detected as an assigned variable in test.mc, found: {assigned:?}"
+        );
+        assert!(assigned.contains(&"C".to_string()));
+        assert!(assigned.contains(&"nodes".to_string()));
+        assert!(assigned.contains(&"A".to_string()));
+    }
+
+    #[test]
     fn test_johdatus_graafiteoriaan_jsxgraph_rendering() {
         let xml = include_str!(
             "../../../material/tentti-Matematiikan opettajat-Discrete Mathematics (TTY)-20160515-1723/johdatus_graafiteoriaan.xml"
@@ -2676,7 +2686,8 @@ mod tests {
             if let Question::Stack(sq) = q {
                 let ev = evaluate_stack_question_maxima(sq, 42);
                 assert!(
-                    ev.questiontext_html.contains("class=\"jxgbox stack-jsxgraph stack-iframe-holder\""),
+                    ev.questiontext_html
+                        .contains("class=\"jxgbox stack-jsxgraph stack-iframe-holder\""),
                     "should contain jsxgraph iframe holder"
                 );
                 assert!(
@@ -2684,7 +2695,8 @@ mod tests {
                     "should render isolated iframe"
                 );
                 assert!(
-                    ev.questiontext_html.contains("sandbox=\"allow-scripts allow-downloads\""),
+                    ev.questiontext_html
+                        .contains("sandbox=\"allow-scripts allow-downloads\""),
                     "iframe must have sandbox without allow-same-origin"
                 );
                 assert!(
@@ -2775,7 +2787,9 @@ mod tests {
         assert!(rendered.contains("class=\"stack-iframe-holder\""));
         assert!(rendered.contains("display:none;"));
         assert!(rendered.contains("&lt;script type=&quot;module&quot;&gt;"));
-        assert!(rendered.contains("import stack_js from &#39;/corsscripts/stackjsiframe.min.js&#39;;"));
+        assert!(
+            rendered.contains("import stack_js from &#39;/corsscripts/stackjsiframe.min.js&#39;;")
+        );
         assert!(rendered.contains("import {foo} from &#39;/corsscripts/bar.js&#39;;"));
         assert!(rendered.contains(
             "Promise.all([stack_js.request_access_to_input(&quot;ans1&quot;,true)]).then(([ans1Ref]) =&gt; {"
@@ -2836,7 +2850,9 @@ mod tests {
         ));
         assert!(rendered.contains("data-frame-title=\"Custom Frame\""));
         assert!(rendered.contains("&lt;style&gt;body { margin: 0; }&lt;/style&gt;"));
-        assert!(rendered.contains("&lt;script type=&quot;module&quot;&gt;console.log(FRAME_ID);&lt;/script&gt;"));
+        assert!(rendered.contains(
+            "&lt;script type=&quot;module&quot;&gt;console.log(FRAME_ID);&lt;/script&gt;"
+        ));
     }
 
     #[test]
@@ -2876,7 +2892,8 @@ mod tests {
                 "rendered questiontext_html should contain iframe element"
             );
             assert!(
-                ev.questiontext_html.contains("sandbox=\"allow-scripts allow-downloads\""),
+                ev.questiontext_html
+                    .contains("sandbox=\"allow-scripts allow-downloads\""),
                 "iframe element must have sandbox without allow-same-origin"
             );
             assert!(
