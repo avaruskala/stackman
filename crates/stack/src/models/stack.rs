@@ -154,7 +154,7 @@ pub struct Node {
     /// Mod
     pub truescoremode: ScoreMode,
     /// Pisteet
-    #[serde(deserialize_with = "deserialize_score")]
+    #[serde(serialize_with = "serialize_score", deserialize_with = "deserialize_score")]
     pub truescore: f32,
     /// Rangaistus
     pub truepenalty: String,
@@ -168,7 +168,7 @@ pub struct Node {
     /// Mod
     pub falsescoremode: ScoreMode,
     /// Pisteet
-    #[serde(deserialize_with = "deserialize_score")]
+    #[serde(serialize_with = "serialize_score", deserialize_with = "deserialize_score")]
     pub falsescore: f32,
     /// Rangaistus
     pub falsepenalty: String,
@@ -346,21 +346,64 @@ pub enum ShowValidation {
     YesCompact,
 }
 
-/// Pistearvo voi olla desimaaliluku tai murtoluku, kuten `1/3`.
+fn serialize_score<S: serde::Serializer>(score: &f32, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&score.to_string())
+}
+
+/// Pistearvo voi olla desimaaliluku, kokonaisluku tai murtoluku, kuten `1/3` (sekä numerona että merkkijonona).
 fn deserialize_score<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
-    let s = String::deserialize(deserializer)?;
-    let t = s.trim();
-    let parsed = match t.split_once('/') {
-        Some((num, den)) => num
-            .trim()
-            .parse::<f32>()
-            .ok()
-            .zip(den.trim().parse::<f32>().ok())
-            .filter(|(_, d)| *d != 0.0)
-            .map(|(n, d)| n / d),
-        None => t.parse::<f32>().ok(),
-    };
-    parsed.ok_or_else(|| serde::de::Error::custom(format!("invalid score `{t}`")))
+    #[derive(Clone, Copy)]
+    struct ScoreVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for ScoreVisitor {
+        type Value = f32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a float, integer, string, or text element containing a score")
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(v as f32)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(v as f32)
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(v as f32)
+        }
+
+        fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+            let t = s.trim();
+            let parsed = match t.split_once('/') {
+                Some((num, den)) => num
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .zip(den.trim().parse::<f32>().ok())
+                    .filter(|(_, d)| *d != 0.0)
+                    .map(|(n, d)| n / d),
+                None => t.parse::<f32>().ok(),
+            };
+            parsed.ok_or_else(|| serde::de::Error::custom(format!("invalid score `{t}`")))
+        }
+
+        fn visit_map<M: serde::de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let mut score = None;
+            while let Some(key) = map.next_key::<String>()? {
+                if key == "$text" {
+                    let s: String = map.next_value()?;
+                    score = Some(self.visit_str(&s)?);
+                } else {
+                    let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                }
+            }
+            score.ok_or_else(|| serde::de::Error::custom("missing score in element"))
+        }
+    }
+
+    deserializer.deserialize_any(ScoreVisitor)
 }
 
 /// Kysymystesti, joka tallennetaan häviöttömästi merkkijonoina.

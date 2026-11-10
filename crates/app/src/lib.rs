@@ -68,6 +68,10 @@ fn HomePage() -> impl IntoView {
     let state = AppState::provide();
     let seed = state.seed();
 
+    Effect::new(move |_| {
+        state.load_from_local_storage();
+    });
+
     // Evaluate STACK question on the server whenever selected STACK question or seed changes
     let stack_eval_resource = Resource::new(
         move || {

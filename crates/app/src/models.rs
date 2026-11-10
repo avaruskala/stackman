@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 use stack::models::{CategoryQuestion, Question, Quiz, common::Text};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum QuestionListView {
     #[default]
     All,
     Chosen,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum QuestionTypeFilter {
     #[default]
     All,
@@ -28,7 +28,7 @@ impl QuestionTypeFilter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LanguageFilter {
     #[default]
     All,

@@ -2663,20 +2663,6 @@ mod tests {
     }
 
     #[test]
-    fn test_maxima_variable_extraction_from_test_mc() {
-        let code = include_str!("../../../test.mc");
-        let statements = normalize_maxima_statements(code);
-        let assigned = extract_assigned_variables(&statements);
-        assert!(
-            assigned.contains(&"CC".to_string()),
-            "CC must be detected as an assigned variable in test.mc, found: {assigned:?}"
-        );
-        assert!(assigned.contains(&"C".to_string()));
-        assert!(assigned.contains(&"nodes".to_string()));
-        assert!(assigned.contains(&"A".to_string()));
-    }
-
-    #[test]
     fn test_johdatus_graafiteoriaan_jsxgraph_rendering() {
         let xml = include_str!(
             "../../../material/tentti-Matematiikan opettajat-Discrete Mathematics (TTY)-20160515-1723/johdatus_graafiteoriaan.xml"

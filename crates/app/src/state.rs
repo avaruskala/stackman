@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use leptos::prelude::*;
 use reactive_stores::Store;
+use serde::{Deserialize, Serialize};
 use stack::{models::Quiz, render::export_quiz_to_moodle_xml};
 
 use crate::{
@@ -12,16 +13,48 @@ use crate::{
     },
 };
 
+pub const LOCAL_STORAGE_KEY: &str = "stackman_app_state";
+
+#[cfg(target_arch = "wasm32")]
+fn get_local_storage() -> Option<web_sys::Storage> {
+    web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_local_storage() -> Option<web_sys::Storage> {
+    None
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "hydrate"))]
+pub fn setup_beforeunload_save(store: Store<AppState>) {
+    use wasm_bindgen::{JsCast, closure::Closure};
+    if let Some(win) = web_sys::window() {
+        let closure = Closure::<dyn Fn()>::new(move || {
+            store.with_untracked(|s| s.save_to_local_storage());
+        });
+        let _ =
+            win.add_event_listener_with_callback("beforeunload", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "hydrate")))]
+pub fn setup_beforeunload_save(_store: Store<AppState>) {}
+
 /// Application state managed as a fine-grained reactive store via `reactive_stores`.
-#[derive(Debug, Clone, Store)]
+#[derive(Debug, Clone, PartialEq, Store, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppState {
     #[store(key: usize = |entry| entry.id)]
     pub questions: Vec<QuestionEntry>,
     pub selected_id: Option<usize>,
     pub chosen_ids: BTreeSet<usize>,
     pub list_view: QuestionListView,
+    #[serde(skip)]
     pub parse_error: Option<String>,
+    #[serde(skip)]
     pub is_dragging: bool,
+    #[serde(skip)]
     pub loading_msg: Option<String>,
 
     // Sidebar filter fields
@@ -62,10 +95,91 @@ impl Default for AppState {
 }
 
 impl AppState {
+    /// Serialize the state to a JSON string.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// Deserialize state from a JSON string.
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    /// Attempts to load the saved `AppState` from browser `localStorage`.
+    /// Returns `None` if running outside the browser, if `localStorage` is inaccessible,
+    /// if the key does not exist, or if deserialization fails.
+    pub fn load_from_local_storage() -> Option<Self> {
+        let storage = get_local_storage()?;
+        match storage.get_item(LOCAL_STORAGE_KEY) {
+            Ok(Some(json)) if !json.trim().is_empty() => match Self::from_json(&json) {
+                Ok(state) => {
+                    log::info!(
+                        "Loaded AppState from localStorage ({} questions)",
+                        state.questions.len()
+                    );
+                    Some(state)
+                }
+                Err(err) => {
+                    log::warn!("Failed to deserialize AppState from localStorage: {err}");
+                    None
+                }
+            },
+            Ok(_) => None,
+            Err(err) => {
+                log::warn!("Error accessing localStorage: {err:?}");
+                None
+            }
+        }
+    }
+
+    /// Saves the current `AppState` to browser `localStorage`.
+    pub fn save_to_local_storage(&self) {
+        if let Some(storage) = get_local_storage() {
+            if self.questions.is_empty() && self.chosen_ids.is_empty() && self.selected_id.is_none()
+            {
+                let _ = storage.remove_item(LOCAL_STORAGE_KEY);
+                log::debug!("Cleared empty AppState from localStorage");
+                return;
+            }
+            match self.to_json() {
+                Ok(json) => {
+                    if let Err(err) = storage.set_item(LOCAL_STORAGE_KEY, &json) {
+                        log::warn!("Failed to write AppState to localStorage: {err:?}");
+                    } else {
+                        log::debug!("Saved AppState to localStorage");
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Failed to serialize AppState: {err}");
+                }
+            }
+        }
+    }
+
+    /// Clears the saved `AppState` from browser `localStorage`.
+    pub fn clear_local_storage() {
+        if let Some(storage) = get_local_storage()
+            && let Err(err) = storage.remove_item(LOCAL_STORAGE_KEY)
+        {
+            log::warn!("Failed to remove AppState from localStorage: {err:?}");
+        }
+    }
+
     /// Initialize `Store<AppState>` and provide it to the Leptos context.
     pub fn provide() -> Store<Self> {
-        let store = Store::new(Self::default());
+        Self::provide_ext(false)
+    }
+
+    /// Initialize `Store<AppState>` with optional immediate loading from `localStorage`.
+    pub fn provide_ext(load_immediate: bool) -> Store<Self> {
+        let initial = if load_immediate {
+            Self::load_from_local_storage().unwrap_or_default()
+        } else {
+            Self::default()
+        };
+        let store = Store::new(initial);
         provide_context(store);
+        setup_beforeunload_save(store);
         store
     }
 
@@ -99,6 +213,10 @@ pub trait AppStateExt {
     fn handle_drag_over(&self, ev: leptos::ev::DragEvent);
     fn handle_drag_leave(&self, ev: leptos::ev::DragEvent);
     fn handle_drop(&self, ev: leptos::ev::DragEvent);
+
+    fn save_to_local_storage(&self);
+    fn load_from_local_storage(&self) -> bool;
+    fn clear_local_storage(&self);
 }
 
 impl AppStateExt for Store<AppState> {
@@ -244,6 +362,7 @@ impl AppStateExt for Store<AppState> {
         self.chosen_ids().set(BTreeSet::new());
         self.list_view().set(QuestionListView::All);
         self.parse_error().set(None);
+        AppState::clear_local_storage();
     }
 
     fn randomize_seed(&self) {
@@ -293,13 +412,28 @@ impl AppStateExt for Store<AppState> {
             if let Some(dt) = ev.data_transfer()
                 && let Some(files) = dt.files()
             {
-                crate::api::read_uploaded_xml_files(
-                    files,
-                    state,
-                    move |filename, quiz| state.add_parsed_quiz(filename, quiz),
-                );
+                crate::api::read_uploaded_xml_files(files, state, move |filename, quiz| {
+                    state.add_parsed_quiz(filename, quiz)
+                });
             }
         }
+    }
+
+    fn save_to_local_storage(&self) {
+        self.with_untracked(|state| state.save_to_local_storage());
+    }
+
+    fn load_from_local_storage(&self) -> bool {
+        if let Some(loaded) = AppState::load_from_local_storage() {
+            self.update(|s| *s = loaded);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn clear_local_storage(&self) {
+        AppState::clear_local_storage();
     }
 }
 
@@ -307,6 +441,9 @@ impl AppStateExt for Store<AppState> {
 mod tests {
     use super::*;
     use stack::render::parse_moodle_xml;
+    const RAW_XML: &str = include_str!(
+        "../../../material/tentti-Matematiikan opettajat-Discrete Mathematics (TTY)-20160515-1723/questions-Discrete-Multilang.-20161122-0033.xml"
+    );
 
     #[test]
     fn test_reactive_store_state_transitions() {
@@ -318,10 +455,7 @@ mod tests {
             assert_eq!(ctx_state.total_count(), 0);
             assert!(!ctx_state.has_questions());
 
-            let raw_xml = include_str!(
-                "../../../material/tentti-Matematiikan opettajat-Discrete Mathematics (TTY)-20160515-1723/questions-Discrete-Multilang.-20161122-0033.xml"
-            );
-            let quiz = parse_moodle_xml(raw_xml).expect("should parse XML");
+            let quiz = parse_moodle_xml(RAW_XML).expect("should parse XML");
             state.add_parsed_quiz("discrete.xml".to_string(), quiz);
 
             let total = state.total_count();
@@ -354,6 +488,107 @@ mod tests {
             assert_eq!(state.total_count(), 0);
             assert_eq!(state.chosen_count(), 0);
             assert_eq!(state.selected_id().get_untracked(), None);
+        });
+    }
+
+    #[test]
+    fn test_app_state_json_roundtrip() {
+        let quiz = parse_moodle_xml(RAW_XML).expect("should parse XML");
+        let entries = extract_questions_from_quiz(quiz, "discrete.xml", 1);
+        assert!(!entries.is_empty());
+
+        let state = AppState {
+            questions: entries,
+            selected_id: Some(1),
+            chosen_ids: BTreeSet::from([1, 2, 3]),
+            list_view: QuestionListView::Chosen,
+            search_query: "induktio".to_string(),
+            type_filter: QuestionTypeFilter::Stack,
+            category_filter: "Matematiikka".to_string(),
+            lang_filter: LanguageFilter::Fi,
+            seed: 98765,
+            fill_correct: true,
+            show_general_feedback: false,
+            show_variables: false,
+            show_prt: true,
+            ..Default::default()
+        };
+
+        // Serialize to JSON
+        let json = state.to_json().expect("should serialize AppState to JSON");
+        assert!(!json.is_empty());
+
+        // Deserialize from JSON
+        let deserialized = match AppState::from_json(&json) {
+            Ok(s) => s,
+            Err(e) => {
+                let col = e.column();
+                let start = col.saturating_sub(100);
+                let end = (col + 100).min(json.len());
+                panic!("Error: {e}\nContext: {}", &json[start..end]);
+            }
+        };
+
+        assert_eq!(deserialized.questions.len(), state.questions.len());
+        assert_eq!(deserialized.selected_id, Some(1));
+        assert_eq!(deserialized.chosen_ids, state.chosen_ids);
+        assert_eq!(deserialized.list_view, QuestionListView::Chosen);
+        assert_eq!(deserialized.search_query, "induktio");
+        assert_eq!(deserialized.type_filter, QuestionTypeFilter::Stack);
+        assert_eq!(deserialized.category_filter, "Matematiikka");
+        assert_eq!(deserialized.lang_filter, LanguageFilter::Fi);
+        assert_eq!(deserialized.seed, 98765);
+        assert!(deserialized.fill_correct);
+        assert!(!deserialized.show_general_feedback);
+        assert!(!deserialized.show_variables);
+        assert!(deserialized.show_prt);
+
+        // Skipped transient fields should be default
+        assert_eq!(deserialized.parse_error, None);
+        assert!(!deserialized.is_dragging);
+        assert_eq!(deserialized.loading_msg, None);
+    }
+
+    #[test]
+    fn test_app_state_json_defaults() {
+        let partial_json = r#"{"search_query": "test"}"#;
+        let deserialized: AppState =
+            AppState::from_json(partial_json).expect("should deserialize partial JSON");
+        assert_eq!(deserialized.search_query, "test");
+        assert_eq!(deserialized.seed, 12345);
+        assert_eq!(deserialized.list_view, QuestionListView::All);
+        assert_eq!(deserialized.questions.len(), 0);
+        assert_eq!(deserialized.chosen_ids.len(), 0);
+    }
+
+    #[test]
+    fn test_on_cleanup_execution() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let cleaned_up = Arc::new(AtomicBool::new(false));
+        let cleaned_up_clone = Arc::clone(&cleaned_up);
+
+        let owner = Owner::new();
+        owner.with(|| {
+            let _state = AppState::provide();
+            on_cleanup(move || {
+                cleaned_up_clone.store(true, Ordering::SeqCst);
+            });
+        });
+
+        assert!(!cleaned_up.load(Ordering::SeqCst));
+        drop(owner);
+        assert!(cleaned_up.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_load_from_storage_method() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let state = AppState::provide();
+            // In native test environment without browser localStorage, returns false gracefully
+            assert!(!state.load_from_local_storage());
         });
     }
 }
